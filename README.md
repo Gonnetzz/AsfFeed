@@ -11,14 +11,27 @@ Create a file named **settings.json** in the plugin directory. It must contain:
 * `AppID`: the game’s AppID
 * `LeaderboardName`: the name of the leaderboard to query
 * `Debug`: enables or disables debug output
+* `PredefinedFilters`: optional dictionary to define filter aliases (e.g. "test")
 
 Example:
-```
+```json
 {
   "Port": 12345,
   "AppID": 12345,
   "LeaderboardName": "LeaderboardName",
-  "Debug": false
+  "Debug": false,
+  "PredefinedFilters": {
+    "test": [
+      {
+        "ranked": "1",
+        "type": "1"
+      },
+      {
+        "ranked": "1",
+        "type": "2"
+      }
+    ]
+  }
 }
 ```
 
@@ -52,20 +65,25 @@ After configuration, the API is available at:
 
 **Parameters:**
 
-* `count` – number of lobbies to return
-* `mode` – optional; supported values:
-
-  * `normal` (default, max: 50)
-  * `ranked_split` (only ranked/split lobbies, max: 100)
+* `filters` – optional; a formatted string defining search filters. The format is `filters{...}`. Inside the braces, you can list multiple comma-separated filters. A filter can be:
+    * A predefined name from `settings.json` (e.g. `test`).
+    * A specific key-value pair in brackets: `["key"="value"]`.
+  
+  The plugin will make a separate Steam request for each filter group defined and merge the results (deduplicated by Lobby ID).
 
 **Example usage:**
-Normal mode:
-`http://127.0.0.1:12345/GetLobbies`
-`http://127.0.0.1:12345/GetLobbies?count=50`
 
-Ranked split mode:
-`http://127.0.0.1:12345/GetLobbies?mode=ranked_split`
-`http://127.0.0.1:12345/GetLobbies?count=200&mode=ranked_split`
+Unfiltered (returns default batch):
+`http://127.0.0.1:12345/GetLobbies`
+
+Using a predefined filter named "test":
+`http://127.0.0.1:12345/GetLobbies?filters=filters{test}`
+
+Using a direct filter for ranked lobbies:
+`http://127.0.0.1:12345/GetLobbies?filters=filters{["ranked"="1"]}`
+
+Combining a predefined filter and a direct filter:
+`http://127.0.0.1:12345/GetLobbies?filters=filters{test, ["type"="1"]}`
 
 ---
 

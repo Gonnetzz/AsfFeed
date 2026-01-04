@@ -2,15 +2,18 @@
 import xml.etree.ElementTree as ET
 import sys
 
-def get_lobbies(count=200, mode="normal"):
-    params = f"count={count}"
-    if mode == "split":
-        params += "&mode=ranked_split"
+def get_lobbies(filters=None):
+    url = "http://127.0.0.1:12345/GetLobbies"
     
-    url = f"http://127.0.0.1:12345/GetLobbies?{params}"
+    params = []
+    if filters:
+        params.append(f"filters={filters}")
+    
+    if params:
+        url += "?" + "&".join(params)
     
     try:
-        print(f"Requesting lobbies (Mode: {mode})...")
+        print(f"Requesting lobbies (Filters: {filters if filters else 'None'})...")
         response = requests.get(url)
         
         if response.status_code == 200:
@@ -65,12 +68,19 @@ def parse_and_print_lobbies(xml_data):
 
     except ET.ParseError as e:
         print(f"XML Parse Error: {e}")
-        # print(xml_data)
 
 if __name__ == "__main__":
-    mode_arg = "normal"
-    if len(sys.argv) > 1 and sys.argv[1] == "split":
-        mode_arg = "split"
+    print("### TEST 1: Predefined filter 'test' ###")
+    xml_test = get_lobbies("filters{test}")
+    parse_and_print_lobbies(xml_test)
+    print("\n")
 
-    xml_result = get_lobbies(200, mode_arg)
-    parse_and_print_lobbies(xml_result)
+    print("### TEST 2: Manual filter 'ranked=1' ###")
+    xml_ranked = get_lobbies('filters{["ranked"="1"]}')
+    parse_and_print_lobbies(xml_ranked)
+    print("\n")
+
+    print("### TEST 3: Unfiltered ###")
+    xml_unfiltered = get_lobbies()
+    parse_and_print_lobbies(xml_unfiltered)
+    print("\n")

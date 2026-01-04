@@ -19,12 +19,13 @@ namespace ASFLeaderboardPlugin {
         public uint AppID { get; set; } = 12345;
         public string LeaderboardName { get; set; } = "Leaderboard_name";
         public bool Debug { get; set; } = false;
+        public Dictionary<string, List<Dictionary<string, string>>> PredefinedFilters { get; set; } = new();
     }
 
     [Export(typeof(IPlugin))]
     public class MainPlugin : IPlugin, IBotSteamClient {
-        public string Name => "AsfFeed";
-        public Version Version => new Version(2, 8, 0, 0);
+        public string Name => "ASF Leaderboard XML Host";
+        public Version Version => new Version(2, 9, 0, 0);
 
         public static PluginConfig Config { get; private set; } = new PluginConfig();
         private static Bot? _workingBot = null;
@@ -112,19 +113,68 @@ namespace ASFLeaderboardPlugin {
                 if (int.TryParse(ctx.Request.QueryString["count"], out int c)) limit = Math.Clamp(c, 1, 5000);
 
                 if (path == "/GetLeaderboard") {
-                    responseStr = await _leaderboard.FetchXml(bot, limit);
+                    string lbName = ctx.Request.QueryString["name"];
+                    if (string.IsNullOrEmpty(lbName)) {
+                        lbName = Config.LeaderboardName;
+                    }
+                    responseStr = await _leaderboard.FetchXml(bot, limit, lbName);
                 }
                 else if (path == "/GetLobbies") {
-                    string mode = ctx.Request.QueryString["mode"] ?? "";
+                    string filterStr = ctx.Request.QueryString["filters"] ?? "";
+                    var filtersToApply = new List<Dictionary<string, string>>();
 
-                    if (mode == "ranked_split") {
-                        responseStr = await _lobby.GetRankedAndUnrankedSplit(bot, limit);
+                    if (filterStr.StartsWith("filters{") && filterStr.EndsWith("}")) {
+                        string content = filterStr.Substring(8, filterStr.Length - 9);
+
+                        // format ["k"="v"], name, ["k"="v"]
+                        int idx = 0;
+                        while (idx < content.Length) {
+                            int openBracket = content.IndexOf('[', idx);
+                            int comma = content.IndexOf(',', idx);
+
+                            if (openBracket != -1 && (comma == -1 || openBracket < comma)) {
+                                int closeBracket = content.IndexOf(']', openBracket);
+                                if (closeBracket == -1) break;
+
+                                string rawGroup = content.Substring(openBracket + 1, closeBracket - openBracket - 1);
+                                var dict = new Dictionary<string, string>();
+
+                                var pairs = rawGroup.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                                foreach (var p in pairs) {
+                                    var parts = p.Split('=');
+                                    if (parts.Length == 2) {
+                                        string k = parts[0].Trim().Trim('"');
+                                        string v = parts[1].Trim().Trim('"');
+                                        dict[k] = v;
+                                    }
+                                }
+                                filtersToApply.Add(dict);
+                                idx = closeBracket + 1;
+                            }
+                            else {
+                                int endOfToken = comma == -1 ? content.Length : comma;
+                                string token = content.Substring(idx, endOfToken - idx).Trim();
+                                if (!string.IsNullOrWhiteSpace(token)) {
+                                    if (Config.PredefinedFilters.ContainsKey(token)) {
+                                        filtersToApply.AddRange(Config.PredefinedFilters[token]);
+                                    }
+                                    else {
+                                        ASF.ArchiLogger.LogGenericError($"Filter '{token}' not found in configuration.");
+                                    }
+                                }
+                                idx = endOfToken;
+                            }
+
+                            if (idx < content.Length && content[idx] == ',') idx++;
+                            while (idx < content.Length && char.IsWhiteSpace(content[idx])) idx++;
+                        }
                     }
-                    else {
-                        string? filterKey = ctx.Request.QueryString["filter_key"];
-                        string? filterVal = ctx.Request.QueryString["filter_val"];
-                        responseStr = await _lobby.GetLobbies(bot, limit, filterKey, filterVal);
+
+                    if (filtersToApply.Count == 0) {
+                        filtersToApply.Add(new Dictionary<string, string>());
                     }
+
+                    responseStr = await _lobby.GetLobbies(bot, limit, filtersToApply);
                 }
                 else {
                     code = 404;

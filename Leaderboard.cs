@@ -37,7 +37,7 @@ namespace ASFLeaderboardPlugin {
             }
         }
 
-        public async Task<string> FetchXml(Bot bot, int max) {
+        public async Task<string> FetchXml(Bot bot, int max, string leaderboardName) {
             var stats = bot.GetHandler<SteamUserStats>();
             var friends = bot.GetHandler<SteamFriends>();
 
@@ -46,11 +46,11 @@ namespace ASFLeaderboardPlugin {
             var tcsFind = new TaskCompletionSource<global::SteamKit2.SteamUserStats.FindOrCreateLeaderboardCallback>();
             _findQueue.Enqueue(tcsFind);
 
-            stats.FindLeaderboard(MainPlugin.Config.AppID, MainPlugin.Config.LeaderboardName);
+            stats.FindLeaderboard(MainPlugin.Config.AppID, leaderboardName);
 
             var findRes = await tcsFind.Task.WaitAsync(TimeSpan.FromSeconds(10));
             if (findRes.Result != EResult.OK) throw new Exception($"Leaderboard search failed: {findRes.Result}");
-            if (findRes.ID == 0) throw new Exception($"Leaderboard '{MainPlugin.Config.LeaderboardName}' not found.");
+            if (findRes.ID == 0) throw new Exception($"Leaderboard '{leaderboardName}' not found.");
 
             var tcsDl = new TaskCompletionSource<global::SteamKit2.SteamUserStats.LeaderboardEntriesCallback>();
             _downloadQueue.Enqueue(tcsDl);
@@ -85,6 +85,7 @@ namespace ASFLeaderboardPlugin {
                 new XElement("appID", MainPlugin.Config.AppID),
                 new XElement("appFriendlyName", MainPlugin.Config.AppID),
                 new XElement("leaderboardID", findRes.ID),
+                new XElement("leaderboardName", leaderboardName),
                 new XElement("totalLeaderboardEntries", findRes.EntryCount),
                 new XElement("entryStart", 0),
                 new XElement("entryEnd", dlRes.Entries.Count),

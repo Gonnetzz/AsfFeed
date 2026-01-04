@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using ArchiSteamFarm.Core;
 using ArchiSteamFarm.Steam;
 using SteamKit2;
 
@@ -28,23 +29,31 @@ namespace ASFLeaderboardPlugin {
             }
         }
 
-        public async Task<string> GetLobbies(Bot bot, int limit, string? filterKey = null, string? filterVal = null) {
-            var lobbies = await FetchLobbiesInternal(bot, limit, filterKey, filterVal);
-            return await ProcessNamesAndXml(bot, lobbies);
+        public async Task<string> GetLobbies(Bot bot, int limit, List<Dictionary<string, string>> filterSets) {
+            var combinedLobbies = new List<SteamMatchmaking.Lobby>();
+            var seenLobbyIDs = new HashSet<ulong>();
+
+            foreach (var filterDict in filterSets) {
+                try {
+                    var lobbies = await FetchLobbiesInternal(bot, limit, filterDict);
+                    foreach (var l in lobbies) {
+                        if (seenLobbyIDs.Add(l.SteamID.ConvertToUInt64())) {
+                            combinedLobbies.Add(l);
+                        }
+                    }
+                }
+                catch (Exception ex) {
+                    ASF.ArchiLogger.LogGenericError($"Error fetching specific filter set: {ex.Message}");
+                }
+            }
+
+            // sorted by steamid
+            var sortedLobbies = combinedLobbies.OrderBy(x => x.SteamID.ConvertToUInt64()).ToList();
+
+            return await ProcessNamesAndXml(bot, sortedLobbies);
         }
 
-        public async Task<string> GetRankedAndUnrankedSplit(Bot bot, int limit) {
-            var ranked = await FetchLobbiesInternal(bot, limit, "ranked", "1");
-            var unranked = await FetchLobbiesInternal(bot, limit, "ranked", "0");
-
-            var combined = new List<SteamMatchmaking.Lobby>();
-            combined.AddRange(ranked);
-            combined.AddRange(unranked);
-
-            return await ProcessNamesAndXml(bot, combined);
-        }
-
-        private async Task<List<SteamMatchmaking.Lobby>> FetchLobbiesInternal(Bot bot, int limit, string? key, string? val) {
+        private async Task<List<SteamMatchmaking.Lobby>> FetchLobbiesInternal(Bot bot, int limit, Dictionary<string, string> filtersDict) {
             var mm = bot.GetHandler<SteamMatchmaking>();
             if (mm == null) throw new Exception("SteamMatchmaking handler missing.");
 
@@ -54,8 +63,8 @@ namespace ASFLeaderboardPlugin {
             var filters = new List<SteamMatchmaking.Lobby.Filter>();
             filters.Add(new SteamMatchmaking.Lobby.DistanceFilter(ELobbyDistanceFilter.Worldwide));
 
-            if (!string.IsNullOrEmpty(key) && val != null) {
-                filters.Add(new SteamMatchmaking.Lobby.StringFilter(key, ELobbyComparison.Equal, val));
+            foreach (var kvp in filtersDict) {
+                filters.Add(new SteamMatchmaking.Lobby.StringFilter(kvp.Key, ELobbyComparison.Equal, kvp.Value));
             }
 
             mm.GetLobbyList(MainPlugin.Config.AppID, filters, limit);
